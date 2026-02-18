@@ -1,0 +1,113 @@
+stages:
+  - install
+  - test
+  - report
+
+variables:
+  NODE_VERSION: "18"
+  ALLURE_VERSION: "2.25.0"
+
+# Cache para node_modules
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - node_modules/
+
+# Instalação das dependências
+install_dependencies:
+  stage: install
+  image: node:${NODE_VERSION}
+  script:
+    - echo "Instalando dependências..."
+    - npm ci
+  artifacts:
+    paths:
+      - node_modules/
+    expire_in: 1 day
+  only:
+    - branches
+    - merge_requests
+
+# Testes no BrowserStack - Android
+test_android_browserstack:
+  stage: test
+  image: node:${NODE_VERSION}
+  dependencies:
+    - install_dependencies
+  script:
+    - echo "Executando testes Android no BrowserStack..."
+    - npm run test:browserstack
+  artifacts:
+    when: always
+    paths:
+      - allure-results/
+      - screenshots/
+    reports:
+      junit: allure-results/*.xml
+    expire_in: 7 days
+  only:
+    - branches
+    - merge_requests
+  allow_failure: false
+  timeout: 1h
+
+# Testes no BrowserStack - iOS (opcional, comentado)
+# test_ios_browserstack:
+#   stage: test
+#   image: node:${NODE_VERSION}
+#   dependencies:
+#     - install_dependencies
+#   script:
+#     - echo "Executando testes iOS no BrowserStack..."
+#     - export PLATFORM=iOS
+#     - npm run test:browserstack
+#   artifacts:
+#     when: always
+#     paths:
+#       - allure-results/
+#       - screenshots/
+#     reports:
+#       junit: allure-results/*.xml
+#     expire_in: 7 days
+#   only:
+#     - branches
+#     - merge_requests
+#   allow_failure: false
+#   timeout: 1h
+
+# Geração do relatório Allure
+generate_allure_report:
+  stage: report
+  image: node:${NODE_VERSION}
+  dependencies:
+    - test_android_browserstack
+  before_script:
+    - apt-get update && apt-get install -y default-jre
+  script:
+    - echo "Gerando relatório Allure..."
+    - npm run allure:generate
+  artifacts:
+    paths:
+      - allure-report/
+    expire_in: 30 days
+  only:
+    - branches
+    - merge_requests
+  when: always
+
+# Job para publicar relatório em Pages (opcional)
+pages:
+  stage: report
+  dependencies:
+    - generate_allure_report
+  script:
+    - mkdir -p public
+    - cp -r allure-report/* public/
+  artifacts:
+    paths:
+      - public
+    expire_in: 30 days
+  only:
+    - main
+    - master
+  when: always
